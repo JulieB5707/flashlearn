@@ -5,6 +5,8 @@ import 'dart:convert'; // Permet de manipuler le format texte JSON
 import 'dart:html'
     as html; // Permet de parler directement à la mémoire du navigateur Web
 
+bool _isLoaded = false;
+
 // 1. Modèle Utilisateur / Ami
 class AppUser {
   final String id;
@@ -415,10 +417,14 @@ class _MyAppState extends State<MyApp> {
 
     // Synchro avec le gestionnaire global
     AppData.folders = _rootFolders;
+    setState(() {
+      _isLoaded = true;
+    });
   }
 
   // 💾 Fonction pour sauvegarder l'état actuel dans le navigateur web
   void _saveDataToBrowser() {
+    if (!_isLoaded) return;
     try {
       final String encodedFolders = jsonEncode(
         _rootFolders.map((f) => f.toJson()).toList(),
