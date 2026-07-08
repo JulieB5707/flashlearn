@@ -4,6 +4,8 @@ import 'dart:math'; // 🟢 À placer impérativement tout en haut !
 import 'dart:convert'; // Permet de manipuler le format texte JSON
 import 'dart:html'
     as html; // Permet de parler directement à la mémoire du navigateur Web
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:async'; // Ajoute cet import tout en haut du fichier s'il n'y est pas
 
 bool _isLoaded = false;
 
@@ -32,11 +34,9 @@ enum ShareRole { owner, editor, reader }
 // 3. Modèle Flashcard (Mise à jour)
 
 class AppData {
+  static List<Folder> folders = [];
   // Profil de l'utilisateur connecté
   static AppUser? currentUser;
-
-  // Liste des dossiers de l'utilisateur
-  static List<Folder> folders = [];
 
   // Base de données simulée des amis du Leaderboard
   static List<AppUser> mockFriends = [
@@ -365,74 +365,49 @@ class _MyAppState extends State<MyApp> {
   }
 
   // 📂 Fonction pour charger les dossiers depuis le navigateur web
-  void _loadDataFromBrowser() {
-    try {
-      final savedFoldersText = html.window.localStorage['flashlearn_folders'];
-      final savedXpText = html.window.localStorage['flashlearn_xp'];
 
-      if (savedFoldersText != null) {
-        final List<dynamic> decoded = jsonDecode(savedFoldersText);
-        setState(() {
-          _rootFolders = decoded.map((f) => Folder.fromJson(f)).toList();
-        });
-      } else {
-        // Si aucune sauvegarde n'existe, on met ton dossier de Mathématiques par défaut
-        _rootFolders.add(
-          Folder(
-            id: '1',
-            title: 'Mathématiques',
-            intervalProfile: [1, 3, 7, 14],
-            profileName: 'Standard (Long terme)',
-            subFolders: [
-              Folder(
-                id: '1-1',
-                title: 'Analyse - Intégrales',
-                intervalProfile: [1, 3, 7, 14],
-                profileName: 'Standard (Long terme)',
-                cards: [
-                  Flashcard(
-                    id: 'm1',
-                    question:
-                        r"Formule de l'intégration par parties ?\n$$\int u'v = [uv] - \int uv'$$",
-                    response: r"Dérivée du produit : $$(uv)' = u'v + uv'$$",
-                    nextReviewDate: DateTime.now().subtract(
-                      const Duration(minutes: 1),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
+  Timer? _saveDebounce;
+
+  Future<void> _saveDataToBrowser() async {
+    // Si on essaie de sauvegarder trop vite, on annule l'ancien appel
+    if (_saveDebounce?.isActive ?? false) _saveDebounce!.cancel();
+
+    // On attend 500 millisecondes de "calme" avant de sauvegarder pour de vrai
+    _saveDebounce = Timer(const Duration(milliseconds: 500), () async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        print(
+          "DEBUG: Sauvegarde en cours de ${AppData.folders.length} dossiers...",
         );
+        await prefs.setString(
+          'flashlearn_folders',
+          jsonEncode(AppData.folders.map((f) => f.toJson()).toList()),
+        );
+        print("DEBUG: Sauvegarde réussie !");
+      } catch (e) {
+        print("DEBUG: Erreur lors de la sauvegarde : $e");
       }
-
-      if (savedXpText != null) {
-        setState(() {
-          _xp = int.parse(savedXpText);
-        });
-      }
-    } catch (e) {
-      print("Erreur de chargement : $e");
-    }
-
-    // Synchro avec le gestionnaire global
-    AppData.folders = _rootFolders;
-    setState(() {
-      _isLoaded = true;
     });
   }
 
-  // 💾 Fonction pour sauvegarder l'état actuel dans le navigateur web
-  void _saveDataToBrowser() {
-    if (!_isLoaded) return;
-    try {
-      final String encodedFolders = jsonEncode(
-        _rootFolders.map((f) => f.toJson()).toList(),
+  Future<void> _loadDataFromBrowser() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String? savedData = prefs.getString('flashlearn_folders');
+
+    print("DEBUG: Tentative de chargement...");
+
+    if (savedData != null) {
+      print("DEBUG: Données trouvées dans le navigateur : $savedData");
+      final List<dynamic> decodedData = jsonDecode(savedData);
+      AppData.folders = decodedData
+          .map((item) => Folder.fromJson(item))
+          .toList();
+      print(
+        "DEBUG: Dossiers chargés avec succès. Nombre : ${AppData.folders.length}",
       );
-      html.window.localStorage['flashlearn_folders'] = encodedFolders;
-      html.window.localStorage['flashlearn_xp'] = _xp.toString();
-    } catch (e) {
-      print("Erreur de sauvegarde : $e");
+      setState(() {});
+    } else {
+      print("DEBUG: Aucune donnée sauvegardée trouvée dans le navigateur.");
     }
   }
 
@@ -444,7 +419,7 @@ class _MyAppState extends State<MyApp> {
       }
       _xpHistory[DateTime.now().weekday - 1] += amount;
     });
-    _saveDataToBrowser(); // 💾 Sauvegarde automatique dès qu'on gagne de l'XP !
+    //_saveDataToBrowser(); // 💾 Sauvegarde automatique dès qu'on gagne de l'XP !
   }
 
   @override
